@@ -629,9 +629,11 @@ def _build_si(ws, bundle: DocumentBundle):
 
 # ── 主函数：生成完整Excel文件 ────────────────────────────────────────────────
 
-def generate_document_set(bundle: DocumentBundle, output_dir: str) -> dict:
+def generate_document_set(bundle: DocumentBundle, output_dir: str,
+                           master_path: str = None) -> dict:
     """
     生成一套完整单据：套一 + 套二，各自一个Excel文件
+    master_path: 主数据手册路径，用于读取②物料价格表N列的部件图片
     返回 {'set1': path, 'set2': path}
     """
     os.makedirs(output_dir, exist_ok=True)
@@ -658,15 +660,184 @@ def generate_document_set(bundle: DocumentBundle, output_dir: str) -> dict:
     path1 = os.path.join(output_dir, f"套一_{base_name}.xlsx")
     wb1.save(path1)
 
-    # ── 套二 Excel ────────────────────────────────────────────
+    # ── 套二 Excel（含部件图片）──────────────────────────────
+    # 加载图片（如果主数据路径存在）
+    component_images = {}
+    if master_path and os.path.exists(master_path):
+        try:
+            component_images = load_component_images(master_path)
+        except Exception:
+            pass
+
     wb2 = Workbook()
     ws_inv2 = wb2.active; ws_inv2.title = 'Inv.(Parts)'
     _build_set2_invoice(ws_inv2, bundle)
 
     ws_pl2 = wb2.create_sheet('PL(Parts)')
-    _build_set2_pl(ws_pl2, bundle)
+    _build_set2_pl_with_images(ws_pl2, bundle, component_images)
 
     path2 = os.path.join(output_dir, f"套二_{base_name}.xlsx")
     wb2.save(path2)
 
     return {'set1': path1, 'set2': path2}
+
+
+# ── 图片读取工具（从主数据②物料价格表读取N列图片）────────────────────────────
+
+def load_component_images(master_path: str) -> dict:
+    """
+    从主数据管理手册②物料价格表的N列读取部件图片
+    返回 {material_code: image_bytes}
+    """
+    from openpyxl import load_workbook
+    import io
+
+    images = {}
+    try:
+        wb = load_workbook(master_path, data_only=True)
+        # 找物料价格表Sheet
+        ws = None
+        for name in wb.sheetnames:
+            if '物料价格' in name:
+                ws = wb[name]; break
+        if not ws:
+            return images
+
+        # 建立图片锚点→行号的映射
+        for img in ws._images:
+            try:
+                # 图片锚点行（1-indexed）
+                anchor = img.anchor
+                if hasattr(anchor, '_from'):
+                    img_row = anchor._from.row + 1  # 0-indexed→1-indexed
+                elif hasattr(anchor, 'row'):
+                    img_row = anchor.row
+                else:
+                    continue
+
+                # 从B列（第2列）读取物料编码
+                mat_code = str(ws.cell(row=img_row, column=2).value or '').strip()
+                if not mat_code or mat_code in ('nan', '物料编码', '★主键2'):
+                    continue
+
+                # 读取图片数据
+                raw = img._data()
+                if raw and len(raw) > 100:
+                    images[mat_code] = raw
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    return images
+
+
+# ── 重写套二PL（含图片）────────────────────────────────────────────────────────
+
+def _build_set2_pl_with_images(ws, bundle, component_images: dict = None):
+    """套二装箱单，支持图片嵌入"""
+    import io as _io
+    from openpyxl.drawing.image import Image as XLImage
+
+    ws.column_dimensions['A'].width = 20
+    ws.column_dimensions['B'].width = 34
+    ws.column_dimensions['C'].width = 4
+    ws.column_dimensions['D'].width = 14   # 图片列
+    ws.column_dimensions['E'].width = 4
+    ws.column_dimensions['F'].width = 12
+    ws.column_dimensions['G'].width = 12
+    ws.column_dimensions['H'].width = 12
+    ws.column_dimensions['I'].width = 12
+    ws.column_dimensions['J'].width = 14
+
+    r = 1
+    _mc(ws,r,1,r,10, bundle.seller_name_en, bold=True, size=12)
+    ws.row_dimensions[r].height=22; r+=1
+    ws.row_dimensions[r].height=6; r+=1
+    _mc(ws,r,1,r,10, bundle.seller_address_en, size=9)
+    ws.row_dimensions[r].height=16; r+=1
+    for _ in range(3): ws.row_dimensions[r].height=6; r+=1
+    _mc(ws,r,1,r,1, 'Messrs：', bold=True)
+    _mc(ws,r,2,r,5, bundle.buyer_name_en, bold=True)
+    _sc(ws,r,7, 'Invoice No.：', bold=True, h='right')
+    _sc(ws,r,8, bundle.invoice_no + '-TH', bold=True)
+    ws.row_dimensions[r].height=18; r+=1
+    _mc(ws,r,1,r,1, 'Address：', bold=True)
+    _mc(ws,r,2,r,5, bundle.buyer_address_en)
+    _sc(ws,r,7, 'Invoice Date：', bold=True, h='right')
+    _sc(ws,r,8, bundle.invoice_date)
+    ws.row_dimensions[r].height=26; r+=1
+    _mc(ws,r,3,r,10, 'PACKING  LIST (PARTS)', bold=True, size=14, h='center')
+    ws.row_dimensions[r].height=22; r+=1
+
+    pl_hdrs = ['Mark & Container No.','Description of Goods','',
+               'Pituctures\nof Goods','',
+               'Quantity \n(PCS)','Quantity \n(PKGS)','N.W.\n(KGS)','G.W.\n(KGS)','Measurement  (CBM)']
+    for ci, h in enumerate(pl_hdrs, 1):
+        c = ws.cell(row=r, column=ci, value=h)
+        c.font = _fn(True, 9); c.fill = _fl('D6E4F0')
+        c.alignment = _al('center'); c.border = _bd()
+    ws.row_dimensions[r].height=36; r+=1
+
+    ctnr_nos = ' / '.join(c.container_no for c in bundle.containers)
+    _sc(ws,r,1, 'EF', bold=True, h='center')
+    ws.row_dimensions[r].height=16; r+=1
+    _sc(ws,r,1, ctnr_nos, bold=True, h='center')
+    ws.row_dimensions[r].height=16
+
+    first_cbm_row = r
+    t_pcs=t_pkgs=t_nw=t_gw=t_cbm=0
+    last_prod = None
+    IMG_ROW_H = 60  # 有图片的行高
+
+    for line in bundle.set2_lines:
+        if line.product_code != last_prod:
+            _mc(ws,r,2,r,5, f'— {line.product_code} —', bold=True, size=9,
+                bg='F0F7FF', color='1F3864', h='center')
+            ws.row_dimensions[r].height=16; r+=1
+            last_prod = line.product_code
+
+        _mc(ws,r,2,r,3, line.name_en)
+        _sc(ws,r,6, int(line.total_qty), h='center'); ws.cell(row=r,column=6).border=_bd()
+        pkgs=int(line.box_count)
+        _sc(ws,r,7, pkgs, h='center'); ws.cell(row=r,column=7).border=_bd()
+        _sc(ws,r,8, line.total_nw, h='center'); ws.cell(row=r,column=8).border=_bd()
+        _sc(ws,r,9, line.total_gw, h='center'); ws.cell(row=r,column=9).border=_bd()
+
+        # 嵌入图片到D列
+        has_img = False
+        if component_images and line.material_code in component_images:
+            try:
+                img_bytes = component_images[line.material_code]
+                img_stream = _io.BytesIO(img_bytes)
+                xl_img = XLImage(img_stream)
+                # 适配单元格大小
+                xl_img.width = 50
+                xl_img.height = 50
+                col_letter = 'D'
+                ws.add_image(xl_img, f'{col_letter}{r}')
+                has_img = True
+            except Exception:
+                pass
+
+        ws.row_dimensions[r].height = IMG_ROW_H if has_img else 16
+        t_pcs+=int(line.total_qty); t_pkgs+=pkgs
+        t_nw+=line.total_nw; t_gw+=line.total_gw; t_cbm+=line.total_cbm
+        r+=1
+
+    ws.cell(row=first_cbm_row, column=10).value = round(t_cbm, 3)
+    ws.cell(row=first_cbm_row, column=10).alignment = _al('center')
+
+    r+=1
+    try:
+        from num2words import num2words as n2w
+        pkgs_word = n2w(t_pkgs, lang='en').upper()
+    except:
+        pkgs_word = str(t_pkgs)
+    _mc(ws,r,2,r,10, f"TOTAL PACKED IN {pkgs_word} ({t_pkgs}) PACKAGES ONLY.",
+        italic=True, size=9)
+    ws.row_dimensions[r].height=16; r+=2
+    _mc(ws,r,4,r,4, 'TOTAL:', bold=True, h='right')
+    for ci, val in [(6,t_pcs),(7,t_pkgs),(8,round(t_nw,2)),(9,round(t_gw,2)),(10,round(t_cbm,3))]:
+        _sc(ws,r,ci, val, bold=True, h='center'); ws.cell(row=r,column=ci).border=_bd()
+    ws.row_dimensions[r].height=20

@@ -838,7 +838,7 @@ def run_task(tid, master_path, packing_path, batch_no, do_all):
                 log(f'     套二：USD {bundle.set2_total_amount:,.2f}  ({len(bundle.set2_lines)} 部件，{bundle.total_pkgs} 箱)')
                 log(f'     GW {bundle.total_gw:.0f} kg  CBM {bundle.total_cbm:.2f} m³')
                 log('  📄 生成 Excel…')
-                paths = generate_document_set(bundle, OUTPUT_DIR)
+                paths = generate_document_set(bundle, OUTPUT_DIR, master_path=master_path)
                 s1, s2 = os.path.basename(paths['set1']), os.path.basename(paths['set2'])
                 log(f'  ✅ 套一：{s1}'); log(f'  ✅ 套二：{s2}')
                 outputs.append({'batch':bn,'set1':s1,'set1_name':s1,'set2':s2,'set2_name':s2})
