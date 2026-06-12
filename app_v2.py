@@ -5,7 +5,7 @@ app_v2.py — 外贸单据自动生成系统 Web版 v2
 import os, sys, json, uuid, threading, traceback, hashlib
 from flask import Flask, request, jsonify, send_file, render_template_string
 from datetime import datetime
-from werkzeug.utils import secure_filename
+from werkzeug.utils import secure_filename   
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
