@@ -17,9 +17,13 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 app.secret_key = os.environ.get('SECRET_KEY', 'qf-trade-v3-2026')
 
-UPLOAD_DIR  = os.path.join(BASE_DIR, 'uploads');   os.makedirs(UPLOAD_DIR, exist_ok=True)
-OUTPUT_DIR  = os.path.join(BASE_DIR, 'output');    os.makedirs(OUTPUT_DIR, exist_ok=True)
-MASTER_DIR  = os.path.join(BASE_DIR, 'master_store'); os.makedirs(MASTER_DIR, exist_ok=True)
+# Railway 用 /tmp（可写），本地用项目目录
+IS_RAILWAY = os.environ.get('RAILWAY_ENVIRONMENT') is not None
+STORE_BASE = '/tmp' if IS_RAILWAY else BASE_DIR
+
+UPLOAD_DIR  = os.path.join(STORE_BASE, 'uploads');    os.makedirs(UPLOAD_DIR, exist_ok=True)
+OUTPUT_DIR  = os.path.join(STORE_BASE, 'output');     os.makedirs(OUTPUT_DIR, exist_ok=True)
+MASTER_DIR  = os.path.join(STORE_BASE, 'master_store'); os.makedirs(MASTER_DIR, exist_ok=True)
 MASTER_META = os.path.join(MASTER_DIR, 'meta.json')
 
 tasks = {}
