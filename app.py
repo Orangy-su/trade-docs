@@ -17,9 +17,10 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 app.secret_key = os.environ.get('SECRET_KEY', 'qf-trade-v3-2026')
 
-# Railway 用 /tmp（可写），本地用项目目录
-IS_RAILWAY = os.environ.get('RAILWAY_ENVIRONMENT') is not None
-STORE_BASE = '/tmp' if IS_RAILWAY else BASE_DIR
+# 云端部署用 /tmp（可写），本地用项目目录
+IS_CLOUD = (os.environ.get('RAILWAY_ENVIRONMENT') is not None or
+            os.environ.get('RENDER') is not None)
+STORE_BASE = '/tmp' if IS_CLOUD else BASE_DIR
 
 UPLOAD_DIR  = os.path.join(STORE_BASE, 'uploads');    os.makedirs(UPLOAD_DIR, exist_ok=True)
 OUTPUT_DIR  = os.path.join(STORE_BASE, 'output');     os.makedirs(OUTPUT_DIR, exist_ok=True)
