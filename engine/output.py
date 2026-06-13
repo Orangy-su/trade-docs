@@ -222,15 +222,16 @@ def _build_set1_pl(ws, bundle: DocumentBundle) -> dict:
 # ── Sheet: 套二发票（部件明细）──────────────────────────────────────────────
 
 def _build_set2_invoice(ws, bundle: DocumentBundle):
-    ws.column_dimensions['A'].width = 20
-    ws.column_dimensions['B'].width = 14
-    ws.column_dimensions['C'].width = 34
-    ws.column_dimensions['D'].width = 4
-    ws.column_dimensions['E'].width = 4
-    ws.column_dimensions['F'].width = 14
-    ws.column_dimensions['G'].width = 4
-    ws.column_dimensions['H'].width = 14
-    ws.column_dimensions['I'].width = 16
+    ws.column_dimensions['A'].width = 18  # Mark
+    ws.column_dimensions['B'].width = 14  # Unit Code
+    ws.column_dimensions['C'].width = 14  # Material NO.
+    ws.column_dimensions['D'].width = 14  # HS Code TH
+    ws.column_dimensions['E'].width = 30  # Description
+    ws.column_dimensions['F'].width = 4
+    ws.column_dimensions['G'].width = 12  # Qty
+    ws.column_dimensions['H'].width = 4
+    ws.column_dimensions['I'].width = 14  # Unit Price
+    ws.column_dimensions['J'].width = 16  # Amount
 
     r = 1
     _mc(ws,r,1,r,9, bundle.seller_name_en, bold=True, size=12)
@@ -251,8 +252,8 @@ def _build_set2_invoice(ws, bundle: DocumentBundle):
     _sc(ws,r,8, bundle.invoice_date)
     ws.row_dimensions[r].height = 26; r += 1
 
-    for ci, h in enumerate(['Mark & No.','HS Code\n(Thailand)','Description of Goods',
-        '','','Quantity (PCS)','','Unit Price (USD)','Amount (USD)'], 1):
+    for ci, h in enumerate(['Mark & No.','Unit Code','Material NO.','HS Code\n(Thailand)','Description of Goods',
+        '','Quantity (PCS)','','Unit Price (USD)','Amount (USD)'], 1):
         c = ws.cell(row=r, column=ci, value=h)
         c.font = _fn(True, 9); c.fill = _fl('D6E4F0')
         c.alignment = _al('center'); c.border = _bd()
@@ -274,23 +275,27 @@ def _build_set2_invoice(ws, bundle: DocumentBundle):
             ws.row_dimensions[r].height = 16; r += 1
             last_prod = line.product_code
 
-        _sc(ws,r,2, line.hs_code_th, h='center', size=9)
+        _sc(ws,r,2, line.product_code, h='center', size=8)
         ws.cell(row=r,column=2).border = _bd()
-        _mc(ws,r,3,r,5, line.name_en)
-        _sc(ws,r,6, int(line.total_qty), h='center')
-        ws.cell(row=r,column=6).border = _bd()
-        _sc(ws,r,8, line.unit_price, h='center', num_fmt='#,##0.00')
-        ws.cell(row=r,column=8).border = _bd()
-        _sc(ws,r,9, line.total_amount, h='center', num_fmt='#,##0.00')
+        _sc(ws,r,3, line.material_code, h='center', size=8)
+        ws.cell(row=r,column=3).border = _bd()
+        _sc(ws,r,4, line.hs_code_th, h='center', size=9)
+        ws.cell(row=r,column=4).border = _bd()
+        _mc(ws,r,5,r,6, line.name_en)
+        _sc(ws,r,7, int(line.total_qty), h='center')
+        ws.cell(row=r,column=7).border = _bd()
+        _sc(ws,r,9, line.unit_price, h='center', num_fmt='#,##0.00')
         ws.cell(row=r,column=9).border = _bd()
+        _sc(ws,r,10, line.total_amount, h='center', num_fmt='#,##0.00')
+        ws.cell(row=r,column=10).border = _bd()
         ws.row_dimensions[r].height = 16; r += 1
 
     r += 1
     _mc(ws,r,2,r,9, amount_words(bundle.set2_total_amount), italic=True, size=9)
     ws.row_dimensions[r].height = 16; r += 2
-    _mc(ws,r,6,r,7, 'TOTAL AMOUNT:', bold=True, h='right')
-    _sc(ws,r,8, 'USD', bold=True, h='center')
-    _sc(ws,r,9, bundle.set2_total_amount, bold=True, h='center', num_fmt='#,##0.00')
+    _mc(ws,r,7,r,8, 'TOTAL AMOUNT:', bold=True, h='right')
+    _sc(ws,r,9, 'USD', bold=True, h='center')
+    _sc(ws,r,10, bundle.set2_total_amount, bold=True, h='center', num_fmt='#,##0.00')
     ws.row_dimensions[r].height = 20
 
 
