@@ -310,27 +310,28 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
       </div>
     </div>
     <div class="form-grid" style="margin-bottom:14px">
-      <div class="field">
-        <label>成品编码 ★ <span style="font-size:11px;color:var(--gray)">多个产品用 | 分隔</span></label>
-        <select id="productSel" onchange="checkMultiProduct()">
-          <option value="">— 选择成品 —</option>
-        </select>
+      <div class="field field-mono">
+        <label>Invoice No. ★</label>
+        <input type="text" id="invoiceNo" placeholder="如：CF-26-US13060101A" oninput="updateGenBtn()">
       </div>
       <div class="field">
         <label>出货日期 ★ <span style="font-size:11px;color:var(--gray)">(Invoice Date)</span></label>
-        <input type="date" id="shipDate" value="">
+        <input type="date" id="shipDate" value="" onchange="updateGenBtn()">
       </div>
     </div>
-    <div class="form-grid" style="margin-bottom:14px">
-      <div class="field field-mono">
-        <label>Invoice No. ★</label>
-        <input type="text" id="invoiceNo" placeholder="如：CF-26-US13060101A">
+    <!-- 成品套数动态区：上传装箱清单后自动填充 -->
+    <div id="productSuitsArea" style="display:none;margin-bottom:14px">
+      <div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:8px">
+        报关整机套数 ★
+        <span style="font-weight:400;color:var(--gray)">从装箱清单自动识别成品编码，每个成品填对应套数</span>
       </div>
-      <div class="field">
-        <label>报关整机套数 ★ <span style="font-size:11px;color:var(--gray)">多产品用 | 分隔</span></label>
-        <input type="text" id="customsSuits" placeholder="如：740 或 440|200">
-      </div>
+      <div id="productSuitsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px"></div>
     </div>
+    <div id="productSuitsEmpty" style="padding:10px 14px;background:var(--lgray);border-radius:8px;
+      font-size:12px;color:var(--gray);border:1px dashed var(--border);margin-bottom:14px">
+      ⬆ 请先上传装箱清单，系统自动识别成品编码
+    </div>
+    
     <!-- 动态付款条件显示 -->
     <div id="buyerInfo" style="display:none;padding:10px 14px;background:var(--lgray);
       border-radius:8px;font-size:12px;color:var(--gray);border:1px solid var(--border);
@@ -664,7 +665,9 @@ async function handlePack(input) {
         <input type="file" accept=".xlsx,.xls" onchange="handlePack(this)"
           style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%">`;
       S.containers=d.containers||[];
+      S.productCodes=d.product_codes||[];
       renderContainerTable();
+      renderProductSuits();
       document.getElementById('orderCard').style.display='block';
       document.getElementById('orderCard').scrollIntoView({behavior:'smooth',block:'nearest'});
     } else {
@@ -681,6 +684,29 @@ async function handlePack(input) {
 }
 
 // ── 货柜分组表格 ──────────────────────────────────────────────────────────
+
+// ── 动态成品套数输入 ─────────────────────────────────────────
+function renderProductSuits() {
+  const area = document.getElementById('productSuitsArea');
+  const empty = document.getElementById('productSuitsEmpty');
+  const grid = document.getElementById('productSuitsGrid');
+  if (!S.productCodes || S.productCodes.length === 0) {
+    area.style.display='none'; empty.style.display='block'; return;
+  }
+  empty.style.display='none'; area.style.display='block';
+  grid.innerHTML = S.productCodes.map(pc => {
+    // 从主数据找产品名称
+    const prod = (S.masterData&&S.masterData.products||[]).find(p=>p.code===pc);
+    const label = prod ? `${pc}<br><span style="font-size:10px;color:var(--gray);font-weight:400">${prod.name_cn}</span>` : pc;
+    return `<div class="field" style="background:#F8FAFF;padding:10px 12px;border-radius:8px;border:1px solid var(--border)">
+      <label style="font-family:var(--mono);font-size:11px;line-height:1.4">${label}</label>
+      <input type="number" class="field-input" id="suits_${pc}"
+        placeholder="整机套数" min="0" style="margin-top:6px" oninput="updateGenBtn()">
+    </div>`;
+  }).join('');
+  updateGenBtn();
+}
+
 function renderContainerTable() {
   const tbody=document.getElementById('ctnrBody');
   if(!S.containers.length) {
@@ -776,12 +802,16 @@ async function saveNewBuyer() {
 
 // ── 生成按钮状态 ──────────────────────────────────────────────────────────
 function updateGenBtn() {
+  const hasSuits = S.productCodes && S.productCodes.length > 0 &&
+    S.productCodes.every(pc => {
+      const el = document.getElementById('suits_'+pc);
+      return el && el.value.trim() !== '' && parseInt(el.value) > 0;
+    });
   const ready = S.masterLoaded && S.packingPath &&
     document.getElementById('buyerSel').value &&
     document.getElementById('sellerSel').value &&
-    document.getElementById('productSel').value &&
     document.getElementById('invoiceNo').value.trim() &&
-    document.getElementById('customsSuits').value.trim();
+    hasSuits;
   document.getElementById('genBtn').disabled=!ready;
   document.getElementById('readyHint').textContent=
     ready ? '准备就绪，点击生成' : '请完成上方必填项（★）';
@@ -789,7 +819,7 @@ function updateGenBtn() {
 }
 
 // 监听必填字段
-['buyerSel','sellerSel','productSel','invoiceNo','customsSuits'].forEach(id=>{
+['buyerSel','sellerSel','invoiceNo','shipDate'].forEach(id=>{
   const el=document.getElementById(id);
   if(el) el.addEventListener('input',updateGenBtn), el.addEventListener('change',updateGenBtn);
 });
@@ -807,13 +837,20 @@ async function generate() {
   const batchBase=document.getElementById('batchNo').value.trim() ||
     `${document.getElementById('buyerSel').value}-${document.getElementById('shipDate').value.replace(/-/g,'').slice(2)}`;
 
+  // 收集成品编码和套数（从动态输入框）
+  const productCodesArr = S.productCodes || [];
+  const customsSuitsArr = productCodesArr.map(pc => {
+    const el = document.getElementById('suits_'+pc);
+    return el ? (parseInt(el.value)||0) : 0;
+  });
+
   const batches=Object.entries(groups).map(([gi,seqs],i)=>({
     batch_no:     `${batchBase}-${String.fromCharCode(65+parseInt(gi))}`,
     customer_code:document.getElementById('buyerSel').value,
     shipment_date:document.getElementById('shipDate').value,
     invoice_no:   document.getElementById('invoiceNo').value.trim() + (Object.keys(groups).length>1?String.fromCharCode(65+parseInt(gi)):''),
-    product_codes:document.getElementById('productSel').value.split('|').map(s=>s.trim()),
-    customs_suits:document.getElementById('customsSuits').value.split('|').map(s=>parseInt(s.trim())||0),
+    product_codes: productCodesArr,
+    customs_suits: customsSuitsArr,
     container_seqs:seqs,
     seller_code:  document.getElementById('sellerSel').value,
     payment_terms:document.getElementById('payTerms').value,
@@ -1062,35 +1099,28 @@ def upload():
     f.save(path)
     size = os.path.getsize(path)
     size_str = f'{size/1024:.1f} KB' if size < 1048576 else f'{size/1048576:.1f} MB'
-    # 解析货柜信息
+    # 用新解析器自动识别格式
     containers = []
+    product_codes = []
     row_count = 0
     try:
-        import pandas as pd
-        df = pd.read_excel(path, sheet_name='装箱清单', header=None)
-        for ri in range(7, 15):
-            if ri >= len(df): break
-            row = df.iloc[ri]
-            seq = int(float(row[0])) if str(row[0]).strip() not in ('nan','') else None
-            cno = str(row[1]).strip() if pd.notna(row[1]) else ''
-            if not seq or not cno: continue
+        sys.path.insert(0, BASE_DIR)
+        from engine.parser_v2 import parse_packing_list_auto
+        packing = parse_packing_list_auto(path)
+        product_codes = packing.product_codes
+        row_count = len(packing.rows)
+        for seq, c in packing.containers.items():
             containers.append({
-                'seq': seq, 'container_no': cno,
-                'seal_no': str(row[4]).strip() if pd.notna(row[4]) else '',
-                'container_size': str(row[6]).strip() if pd.notna(row[6]) else '40HQ',
-                'vgm_kg': float(row[9]) if pd.notna(row[9]) and str(row[9]).strip() not in ('nan','') else None,
-                'so_no': str(row[10]).strip() if pd.notna(row[10]) else '',
-                'etd': str(row[13]).strip() if pd.notna(row[13]) else '',
-                'port_loading': str(row[15]).strip() if pd.notna(row[15]) else '',
+                'seq': seq, 'container_no': c.container_no,
+                'seal_no': c.seal_no, 'container_size': c.container_size,
+                'vgm_kg': c.vgm_kg, 'so_no': c.so_no,
+                'etd': c.etd, 'port_loading': c.port_loading,
             })
-        # 数明细行
-        for ri in range(19, len(df)):
-            row = df.iloc[ri]
-            if str(row[1]).strip() not in ('nan','') and str(row[2]).strip() not in ('nan',''): row_count += 1
     except Exception as e:
         pass
     return jsonify(ok=True, path=path, size=size_str,
-                   containers=containers, container_count=len(containers), row_count=row_count)
+                   containers=containers, container_count=len(containers),
+                   row_count=row_count, product_codes=product_codes)
 
 
 @app.route('/generate_v3', methods=['POST'])
@@ -1141,9 +1171,10 @@ def run_task_v3(tid, master_path, packing_path, batches):
         log(f'  ✅ 往来方：{len(master.parties)} 个')
 
         from engine.parser import parse_packing_list, build_document_bundle
+        from engine.parser_v2 import parse_packing_list_auto
         from engine.output import generate_document_set
-        log('  📦 解析装箱清单…')
-        packing = parse_packing_list(packing_path)
+        log('  📦 解析装箱清单（自动识别格式）…')
+        packing = parse_packing_list_auto(packing_path)
         log(f'     货柜：{len(packing.containers)} 个  明细：{len(packing.rows)} 行')
 
         outputs = []
