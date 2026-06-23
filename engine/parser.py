@@ -110,6 +110,7 @@ class ComponentLineItem:
     origin: str
     customs_required: bool
     remark: str
+    qty_per_box: float = 0.0
 
 
 @dataclass
@@ -312,27 +313,32 @@ def build_document_bundle(
         elif seq in packing.containers:
             containers_in_bundle.append(packing.containers[seq])
 
-    # ── 套一数据（整机归并）──────────────────────────────────────
+    # ── 套一数据（整机归并，支持同一成品编码多品名报关）──────────
     set1_lines: List[FinishedGoodLineItem] = []
     set1_total = 0.0
     for i, prod_code in enumerate(sm.product_codes):
-        fg = master.get_finished_good(prod_code)
-        if not fg: continue
         suits = sm.customs_suits[i] if i < len(sm.customs_suits) else 0
-        amount = round(suits * fg.unit_price_customs, 2)
-        set1_total += amount
-        set1_lines.append(FinishedGoodLineItem(
-            product_code=prod_code,
-            name_en=fg.name_en,
-            name_cn=fg.name_cn,
-            customs_suits=suits,
-            unit_price=fg.unit_price_customs,
-            total_amount=amount,
-            hs_code_cn=fg.hs_code_cn,
-            customs_elements=fg.customs_elements,
-            brand_note=fg.brand_note,
-            customs_name_cn=fg.customs_name_cn,
-        ))
+        # 取该成品编码的所有行（多品名报关时有多行）
+        fg_list = getattr(master, '_fg_list', {}).get(prod_code)
+        if not fg_list:
+            fg = master.get_finished_good(prod_code)
+            fg_list = [fg] if fg else []
+        for fg in fg_list:
+            if not fg or fg.unit_price_customs == 0: continue
+            amount = round(suits * fg.unit_price_customs, 2)
+            set1_total += amount
+            set1_lines.append(FinishedGoodLineItem(
+                product_code=prod_code,
+                name_en=fg.name_en,
+                name_cn=fg.name_cn,
+                customs_suits=suits,
+                unit_price=fg.unit_price_customs,
+                total_amount=amount,
+                hs_code_cn=fg.hs_code_cn,
+                customs_elements=fg.customs_elements,
+                brand_note=fg.brand_note,
+                customs_name_cn=fg.customs_name_cn,
+            ))
 
     # ── 套二数据（部件明细，从装箱清单汇总）──────────────────────
     packing_rows = packing.rows_for_containers(container_seqs)
@@ -352,6 +358,9 @@ def build_document_bundle(
         # 如果装箱清单有GW，优先用装箱清单的
         gw_box = pr.gw_per_box if pr.gw_per_box > 0 else (cp.gw_per_box or 0)
         nw_box = pr.nw_per_box if pr.nw_per_box > 0 else (cp.nw_per_box or round(gw_box * 0.95, 2))
+        # 如果GW=0但NW>0，从NW反推（NW÷0.95）
+        if gw_box == 0 and nw_box > 0:
+            gw_box = round(nw_box / 0.95, 2)
 
         t_gw  = round(gw_box * pr.box_count, 2)
         t_nw  = round(nw_box * pr.box_count, 2)
@@ -385,6 +394,7 @@ def build_document_bundle(
             origin=pr.origin,
             customs_required=customs_req,
             remark=pr.remark,
+            qty_per_box=pr.qty_per_box,
         ))
 
     # ── 合同日期计算 ──────────────────────────────────────────────
