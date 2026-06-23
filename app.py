@@ -1199,7 +1199,7 @@ def run_task_v4(tid, master_path, packing_path, batches):
 
         from engine.parser_v2 import parse_packing_list_auto
         from engine.parser import build_document_bundle
-        from engine.output import generate_document_set
+        from engine.build_v6 import generate_document_set
         log('  📦 解析装箱清单…')
         packing = parse_packing_list_auto(packing_path)
         log(f'     货柜：{len(packing.containers)} 个  明细：{len(packing.rows)} 行')
