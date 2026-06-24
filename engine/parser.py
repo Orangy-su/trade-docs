@@ -446,10 +446,11 @@ def build_document_bundle(
 
         consignee_name=forwarder.name_en if forwarder else '',
         consignee_address=forwarder.address_en if forwarder else '',
-        notify_name=forwarder.consignee_name if forwarder else '',
-        notify_address=forwarder.consignee_address if forwarder else '',
+        notify_name=forwarder.notify_name if forwarder else '',
+        notify_address=forwarder.notify_address if forwarder else '',
 
         so_nos=so_nos,
         etd=etd_val,
-        port_discharge='Bangkok',
+        port_discharge=(forwarder.port_discharge if forwarder and hasattr(forwarder,'port_discharge') and forwarder.port_discharge
+                       else 'Bangkok'),
     )
