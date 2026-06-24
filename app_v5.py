@@ -444,6 +444,10 @@ nav{background:var(--navy);padding:0 20px;height:52px;display:flex;align-items:c
         </tbody>
       </table>
     </div>
+    <div id="ctnrSummary" style="margin-top:8px;padding:8px 12px;background:var(--lgray);
+      border-radius:7px;font-size:12px;color:var(--navy);display:none">
+      合计：<strong id="sumPkgs">0</strong> 箱 &nbsp;·&nbsp; 理论GW：<strong id="sumGW">0</strong> kg
+    </div>
     <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <span style="font-size:11px;color:var(--gray)">分组色标：</span>
       <span style="background:#EBF3FB;color:#1A5276;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700">● 分组A</span>
@@ -715,7 +719,14 @@ function updateBuyer(){
   const bar = document.getElementById('buyerInfoBar');
   if(S.masterData && v){
     const b = (S.masterData.buyers||[]).find(x=>x.code===v);
-    if(b){ bar.style.display='block'; bar.innerHTML=`<strong>${b.name_en}</strong><br>${b.address||''}<br>付款：${b.payment_terms||'—'} · 贸易术语：${b.incoterms||'—'}`; }
+    const fwd = (S.masterData.forwarders||[]).find(x=>x.buyer_code===v) || (S.masterData.forwarders||[])[0];
+    if(b){
+      bar.style.display='block';
+      const fwdLine = fwd
+        ? `<br>📦 货代/Consignee：<strong>${fwd.name_en}</strong> · 通知方：${fwd.notify_name||'—'}`
+        : '<br>⚠ <span style="color:var(--red)">未找到货代，请检查主数据往来方FORWARDER行</span>';
+      bar.innerHTML=`<strong>${b.name_en}</strong><br><span style="color:var(--gray);font-size:11px">${b.address||''}</span><br>付款：${b.payment_terms||'—'} · ${b.incoterms||'—'}${fwdLine}`;
+    }
     // 自动填付款条件
     if(b&&b.payment_terms) document.getElementById('payTerms').value=b.payment_terms;
     if(b&&b.incoterms){ const sel=document.getElementById('incoterms'); for(let i=0;i<sel.options.length;i++) if(sel.options[i].value===b.incoterms){sel.selectedIndex=i;break;} }
@@ -739,9 +750,11 @@ async function handlePackFile(file){
       S.packLoaded=true; S.packData=d;
       S.products=d.products||[]; S.containers=d.containers||[];
       zone.className='upload-zone has';
+      const warn = d.parse_warning ? `<div style="color:#D68910;font-size:11px;margin-top:4px">⚠ ${d.parse_warning}</div>` : '';
       zone.innerHTML=`<div class="up-icon">✅</div>
         <div class="up-label" style="color:var(--green)">${file.name}</div>
         <div class="up-hint">${d.containers?.length||0} 个货柜 · ${d.rows||0} 行物料</div>
+        ${warn}
         <input type="file" accept=".xlsx,.xls" onchange="handlePack(this)" style="position:absolute;inset:0;opacity:0;cursor:pointer">`;
       buildOrderCard();
       document.getElementById('orderCard').style.display='block';
@@ -759,6 +772,7 @@ async function handlePackFile(file){
 function buildOrderCard(){
   buildProductSuits();
   buildCtnrTable();
+  updateCtnrSummary();
   updateGenBtn();
 }
 
@@ -771,9 +785,18 @@ function buildProductSuits(){
   S.products.forEach(p=>{
     const div=document.createElement('div');
     div.style.cssText='background:var(--lgray);border:1.5px solid var(--border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:10px';
-    div.innerHTML=`<div style="flex:1"><div style="font-size:11px;font-weight:700;color:var(--navy)">${p.code}</div><div style="font-size:11px;color:var(--gray);margin-top:2px">${p.name||''}</div></div><input type="number" min="1" value="${p.suits||486}" style="width:80px;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;font-weight:700;text-align:center" data-code="${p.code}" oninput="updateGenBtn()">`;
+    div.innerHTML=`<div style="flex:1"><div style="font-size:11px;font-weight:700;color:var(--navy)">${p.code}</div><div style="font-size:11px;color:var(--gray);margin-top:2px">${p.name||''}</div></div><input type="number" min="1" value="${p.suits||''}" style="width:80px;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;font-weight:700;text-align:center" data-code="${p.code}" oninput="updateGenBtn()">`;
     grid.appendChild(div);
   });
+}
+
+function updateCtnrSummary(){
+  const total_gw = S.containers.reduce((s,c)=>s+(c.gw_theory||0),0);
+  const summary = document.getElementById('ctnrSummary');
+  if(S.containers.length>0 && summary){
+    summary.style.display='block';
+    document.getElementById('sumGW').textContent = total_gw.toFixed(0);
+  }
 }
 
 function buildCtnrTable(){
@@ -829,7 +852,8 @@ function updateGenBtn(){
   const seller  = document.getElementById('sellerSel').value;
   const invoice = document.getElementById('invoiceNo').value.trim();
   const date    = document.getElementById('shipDate').value;
-  const soOK    = S.containers.length===0 || S.containers.some(c=>c.so_no&&c.so_no.trim());
+  const soOK     = S.containers.length===0 || S.containers.some(c=>c.so_no&&c.so_no.trim());
+  const sealWarn = S.containers.length>0 && S.containers.some(c=>!c.seal_no||!c.seal_no.trim());
   const ok = buyer&&seller&&invoice&&date&&soOK&&!S.containers.every(c=>!(c.so_no&&c.so_no.trim()));
   const btn = document.getElementById('genBtn');
   const hint = document.getElementById('readyHint');
@@ -838,13 +862,20 @@ function updateGenBtn(){
   else if(!invoice)        hint.textContent='请填写 Invoice No.';
   else if(!date)           hint.textContent='请选择出货日期';
   else if(!soOK)           hint.textContent='请在货柜配置中填写 SO 号';
+  else if(sealWarn)        hint.textContent='⚠ 有货柜铅封号未填，SI将缺失此信息';
   else                     hint.textContent='';
 }
 
 // ═══════════════════════════════════════════════════════
 // VGM 弹窗
 // ═══════════════════════════════════════════════════════
+const _genHistory = new Set();
 function preGenerate(){
+  const invoice = document.getElementById('invoiceNo').value.trim();
+  if(_genHistory.has(invoice)){
+    if(!confirm(`⚠ 发票号 ${invoice} 本次已生成过，继续会覆盖之前的文件。确定继续？`)) return;
+  }
+  _genHistory.add(invoice);
   // 检查是否有过磅重量
   const hasWeighed = S.containers.some(c=>c.gw_weighed && c.gw_weighed>0);
   if(hasWeighed){ buildVgmModal(); openVgmModal(); }
@@ -989,7 +1020,10 @@ function showResults(outputs, useWeighed){
       <div class="res-item-title">📁 批次 ${o.batch}</div>
       <div class="res-item-sub">套一（整机发票/报关单）+ 套二（散件装箱单）</div>
       <a class="dl-btn" href="/download/${o.set1}" download="${o.set1_name||o.set1}">⬇ 套一 Excel</a>
-      <a class="dl-btn" href="/download/${o.set2}" download="${o.set2_name||o.set2}">⬇ 套二 Excel</a>`;
+      <a class="dl-btn" href="/download/${o.set2}" download="${o.set2_name||o.set2}">⬇ 套二 Excel</a>
+      <div style="font-size:11px;color:var(--gray);margin-top:6px">
+        📋 套一含：CI · PL · 报关单 · 合同 · SI &nbsp;|&nbsp; 套二含：散件CI · 散件PL（含图）
+      </div>`;
     grid.appendChild(div);
   });
 
@@ -1134,8 +1168,10 @@ def upload():
         row_count = len(packing.rows)
         # 汇总每柜理论GW
         for r in packing.rows:
-            if r.nw_per_box > 0:  # 用NW/pcs × qty
-                container_gw[r.container_seq] = container_gw.get(r.container_seq, 0) + r.total_nw
+            # 理论GW = 装箱清单 GW 汇总（GW>0则用GW，否则用NW/0.95估算）
+            gw_contrib = r.total_gw if r.total_gw > 0 else round(r.total_nw / 0.95, 2)
+            if gw_contrib > 0:
+                container_gw[r.container_seq] = container_gw.get(r.container_seq, 0) + gw_contrib
         for seq, c in packing.containers.items():
             containers.append({'seq': seq, 'container_no': c.container_no,
                 'seal_no': c.seal_no or '', 'container_size': c.container_size or '40HQ',
@@ -1144,7 +1180,11 @@ def upload():
                 'gw_theory': round(container_gw.get(seq, 0), 1),
                 'tare': 3900, 'grp': 0})
     except Exception as e:
-        pass
+        return jsonify(ok=True, path=path, session=path,
+                       containers=[], container_count=0,
+                       row_count=0, product_codes=[], products=[], rows=0,
+                       container_gw={}, size=size_str,
+                       parse_warning=f'装箱清单解析出错：{str(e)[:100]}')
     return jsonify(ok=True, path=path, session=path, size=size_str,
                    containers=containers, container_count=len(containers),
                    row_count=row_count, product_codes=product_codes,
